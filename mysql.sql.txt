@@ -1,0 +1,10 @@
+CREATE DATABASE presensi_db;
+USE presensi_db;
+
+CREATE TABLE siswa (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nama VARCHAR(100),
+    kelas VARCHAR(50),
+    status ENUM('Hadir','Izin','Sakit','Alpa'),
+    tanggal DATE
+);

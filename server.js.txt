@@ -1,0 +1,45 @@
+const express = require("express");
+const cors = require("cors");
+const db = require("./db");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// CREATE
+app.post("/siswa", (req, res) => {
+  const { nama, kelas, status, tanggal } = req.body;
+  const sql = "INSERT INTO siswa (nama, kelas, status, tanggal) VALUES (?, ?, ?, ?)";
+  db.query(sql, [nama, kelas, status, tanggal], (err, result) => {
+    if (err) return res.send(err);
+    res.send("Data berhasil ditambahkan");
+  });
+});
+
+// READ
+app.get("/siswa", (req, res) => {
+  db.query("SELECT * FROM siswa", (err, result) => {
+    if (err) return res.send(err);
+    res.json(result);
+  });
+});
+
+// UPDATE
+app.put("/siswa/:id", (req, res) => {
+  const { nama, kelas, status, tanggal } = req.body;
+  const sql = "UPDATE siswa SET nama=?, kelas=?, status=?, tanggal=? WHERE id=?";
+  db.query(sql, [nama, kelas, status, tanggal, req.params.id], (err) => {
+    if (err) return res.send(err);
+    res.send("Data berhasil diupdate");
+  });
+});
+
+// DELETE
+app.delete("/siswa/:id", (req, res) => {
+  db.query("DELETE FROM siswa WHERE id=?", [req.params.id], (err) => {
+    if (err) return res.send(err);
+    res.send("Data berhasil dihapus");
+  });
+});
+
+app.listen(3000, () => console.log("Server running on port 3000"));
