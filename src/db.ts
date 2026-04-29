@@ -11,7 +11,7 @@ export const pool = new Pool({
 });
 
 pool.on("error", (err) => {
-  console.error("Postgres pool error", err);
+  console.error("mysql pool error", err);
 });
 
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
