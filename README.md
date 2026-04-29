@@ -9,7 +9,7 @@ Server REST API berbasis **Node.js + Express + PostgreSQL**.
 2. Salin `.env.example` menjadi `.env` lalu sesuaikan `DATABASE_URL`, `PORT`, `FRONTEND_ORIGIN`, dan `SESSION_SECRET`.
 3. Buat database kosong di mysql, contoh:
    ```sql
-   -- =============================================================================
+-- =============================================================================
 -- Sistem Presensi Pegawai Aqua Danone (MariaDB Version)
 -- =============================================================================
 
