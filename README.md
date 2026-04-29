@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Backend - Sistem Presensi Pegawai Aqua Danone
 
 Server REST API berbasis **Node.js + Express + PostgreSQL**.
@@ -69,3 +70,4 @@ Server akan berjalan di `http://localhost:3001` (sesuai `PORT`).
 | rizky | rizky123 | employee |
 | dewi | dewi123 | employee |
 | agus | agus123 | employee |
+=======
