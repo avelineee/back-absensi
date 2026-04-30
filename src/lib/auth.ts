@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import type { Request, Response, NextFunction } from "express";
-import { query } from "../db.js";
+import { findOne, query } from "../db.js";
 
 const SESSION_COOKIE = "presensi_sid";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 hari
@@ -35,27 +35,26 @@ export async function createSession(userId: number): Promise<string> {
   const id = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   await query(
-    "INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, $3)",
+    "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)",
     [id, userId, expiresAt],
   );
   return id;
 }
 
 export async function destroySession(id: string): Promise<void> {
-  await query("DELETE FROM sessions WHERE id = $1", [id]);
+  await query("DELETE FROM sessions WHERE id = ?", [id]);
 }
 
 export async function getUserBySessionId(
   id: string,
 ): Promise<Employee | null> {
-  const { rows } = await query<Employee>(
+  return findOne<Employee>(
     `SELECT e.* FROM sessions s
      INNER JOIN employees e ON e.id = s.user_id
-     WHERE s.id = $1 AND s.expires_at > NOW()
+     WHERE s.id = ? AND s.expires_at > NOW()
      LIMIT 1`,
     [id],
   );
-  return rows[0] ?? null;
 }
 
 export function setSessionCookie(res: Response, sessionId: string): void {

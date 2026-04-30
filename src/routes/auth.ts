@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import { findOne } from "../db.js";
 import {
   authPayload,
   clearSessionCookie,
@@ -22,11 +22,10 @@ router.post("/auth/login", async (req, res) => {
     return;
   }
   const { username, password } = parsed.data;
-  const { rows } = await query<Employee>(
-    "SELECT * FROM employees WHERE username = $1 LIMIT 1",
+  const user = await findOne<Employee>(
+    "SELECT * FROM employees WHERE username = ? LIMIT 1",
     [username],
   );
-  const user = rows[0];
   if (!user || !(await verifyPassword(password, user.password_hash))) {
     res.status(401).json({ error: "Username atau password salah" });
     return;

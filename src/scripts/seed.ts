@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { pool, query } from "../db.js";
+import { findOne, pool, query } from "../db.js";
 import { hashPassword } from "../lib/auth.js";
 import { todayJakarta } from "../lib/attendance-helpers.js";
 
@@ -13,17 +13,16 @@ async function ensureUser(input: {
   email?: string;
   phone?: string;
 }): Promise<number> {
-  const existing = await query<{ id: number }>(
-    "SELECT id FROM employees WHERE username = $1 LIMIT 1",
+  const existing = await findOne<{ id: number }>(
+    "SELECT id FROM employees WHERE username = ? LIMIT 1",
     [input.username],
   );
-  if (existing.rows.length > 0) return existing.rows[0].id;
+  if (existing) return existing.id;
   const passwordHash = await hashPassword(input.password);
-  const { rows } = await query<{ id: number }>(
+  const result = await query(
     `INSERT INTO employees
        (full_name, username, password_hash, role, position, department, email, phone)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.fullName,
       input.username,
@@ -35,7 +34,7 @@ async function ensureUser(input: {
       input.phone ?? null,
     ],
   );
-  return rows[0].id;
+  return result.insertId;
 }
 
 async function main() {
@@ -61,8 +60,6 @@ async function main() {
   ]);
 
   const today = todayJakarta();
-  const placeholder =
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9ZitFTYAAAAASUVORK5CYII=";
 
   const checkInBase = new Date();
   checkInBase.setUTCHours(1, 5, 0, 0); // ~08:05 WIB
@@ -76,15 +73,16 @@ async function main() {
   ];
 
   for (const s of samples) {
-    const exists = await query(
-      "SELECT id FROM attendance WHERE employee_id = $1 AND date = $2",
+    const exists = await findOne<{ id: number }>(
+      "SELECT id FROM attendance WHERE employee_id = ? AND date = ?",
       [s.id, today],
     );
-    if (exists.rowCount && exists.rowCount > 0) continue;
+    if (exists) continue;
+    // Foto kosong/null untuk seed; pegawai akan upload foto sesungguhnya saat absen.
     await query(
       `INSERT INTO attendance (employee_id, date, check_in_at, check_in_photo, status)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [s.id, today, s.time, placeholder, s.status],
+       VALUES (?, ?, ?, ?, ?)`,
+      [s.id, today, s.time, null, s.status],
     );
   }
 

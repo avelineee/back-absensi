@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import { findOne, query } from "../db.js";
 import { requireAuth } from "../lib/auth.js";
 import {
   approxBytes,
@@ -14,6 +14,7 @@ import {
   CheckOutSchema,
   ListAttendanceQuerySchema,
 } from "../lib/schemas.js";
+import { deletePhotoIfExists, saveAttendancePhoto } from "../lib/storage.js";
 
 const router = Router();
 
@@ -42,12 +43,12 @@ router.get("/attendance", requireAuth, async (req, res) => {
   const conditions: string[] = [];
   const values: unknown[] = [];
   if (parsed.data.date) {
+    conditions.push("a.date = ?");
     values.push(parsed.data.date);
-    conditions.push(`a.date = $${values.length}`);
   }
   if (parsed.data.employeeId) {
+    conditions.push("a.employee_id = ?");
     values.push(parsed.data.employeeId);
-    conditions.push(`a.employee_id = $${values.length}`);
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const { rows } = await query<JoinedRow>(
@@ -68,19 +69,19 @@ router.get("/attendance", requireAuth, async (req, res) => {
 router.get("/attendance/today", requireAuth, async (req, res) => {
   const user = req.user!;
   const today = todayJakarta();
-  const { rows } = await query<AttendanceRow>(
+  const row = await findOne<AttendanceRow>(
     `SELECT * FROM attendance
-     WHERE employee_id = $1 AND date = $2
+     WHERE employee_id = ? AND date = ?
      LIMIT 1`,
     [user.id, today],
   );
-  if (rows.length === 0) {
+  if (!row) {
     res.json({ hasRecord: false, record: null });
     return;
   }
   res.json({
     hasRecord: true,
-    record: shapeAttendance(rows[0], {
+    record: shapeAttendance(row, {
       full_name: user.full_name,
       position: user.position,
       department: user.department,
@@ -106,37 +107,54 @@ router.post("/attendance/check-in", requireAuth, async (req, res) => {
   const today = todayJakarta();
   const now = new Date();
 
-  const existing = await query<AttendanceRow>(
-    "SELECT * FROM attendance WHERE employee_id = $1 AND date = $2 LIMIT 1",
+  const existing = await findOne<AttendanceRow>(
+    "SELECT * FROM attendance WHERE employee_id = ? AND date = ? LIMIT 1",
     [user.id, today],
   );
 
-  if (existing.rows.length > 0 && existing.rows[0].check_in_at) {
+  if (existing && existing.check_in_at) {
     res.status(400).json({ error: "Anda sudah absen masuk hari ini" });
     return;
   }
 
-  const status = statusFromCheckIn(now);
-  let row: AttendanceRow;
+  // Simpan foto sebagai file di folder uploads/attendance
+  let photoUrl: string;
+  try {
+    const saved = await saveAttendancePhoto(parsed.data.photo, "checkin", user.id, today);
+    photoUrl = saved.publicUrl;
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+    return;
+  }
 
-  if (existing.rows.length > 0) {
-    const r = await query<AttendanceRow>(
+  const status = statusFromCheckIn(now);
+  let recordId: number;
+
+  if (existing) {
+    await query(
       `UPDATE attendance
-         SET check_in_at = $1, check_in_photo = $2, status = $3, notes = COALESCE($4, notes)
-       WHERE id = $5
-       RETURNING *`,
-      [now, parsed.data.photo, status, parsed.data.notes ?? null, existing.rows[0].id],
+         SET check_in_at = ?, check_in_photo = ?, status = ?, notes = COALESCE(?, notes)
+       WHERE id = ?`,
+      [now, photoUrl, status, parsed.data.notes ?? null, existing.id],
     );
-    row = r.rows[0];
+    recordId = existing.id;
   } else {
-    const r = await query<AttendanceRow>(
+    const result = await query(
       `INSERT INTO attendance
          (employee_id, date, check_in_at, check_in_photo, status, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [user.id, today, now, parsed.data.photo, status, parsed.data.notes ?? null],
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [user.id, today, now, photoUrl, status, parsed.data.notes ?? null],
     );
-    row = r.rows[0];
+    recordId = result.insertId;
+  }
+
+  const row = await findOne<AttendanceRow>(
+    "SELECT * FROM attendance WHERE id = ? LIMIT 1",
+    [recordId],
+  );
+  if (!row) {
+    res.status(500).json({ error: "Gagal memuat record presensi" });
+    return;
   }
 
   res.status(201).json(
@@ -165,30 +183,50 @@ router.post("/attendance/check-out", requireAuth, async (req, res) => {
   const user = req.user!;
   const today = todayJakarta();
 
-  const existing = await query<AttendanceRow>(
-    "SELECT * FROM attendance WHERE employee_id = $1 AND date = $2 LIMIT 1",
+  const existing = await findOne<AttendanceRow>(
+    "SELECT * FROM attendance WHERE employee_id = ? AND date = ? LIMIT 1",
     [user.id, today],
   );
 
-  if (existing.rows.length === 0 || !existing.rows[0].check_in_at) {
+  if (!existing || !existing.check_in_at) {
     res.status(400).json({ error: "Anda belum absen masuk hari ini" });
     return;
   }
-  if (existing.rows[0].check_out_at) {
+  if (existing.check_out_at) {
     res.status(400).json({ error: "Anda sudah absen pulang hari ini" });
     return;
   }
 
-  const r = await query<AttendanceRow>(
+  // Hapus foto check-out lama (kalau ada) lalu simpan yang baru
+  await deletePhotoIfExists(existing.check_out_photo);
+
+  let photoUrl: string;
+  try {
+    const saved = await saveAttendancePhoto(parsed.data.photo, "checkout", user.id, today);
+    photoUrl = saved.publicUrl;
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+    return;
+  }
+
+  await query(
     `UPDATE attendance
-       SET check_out_at = NOW(), check_out_photo = $1, notes = COALESCE($2, notes)
-     WHERE id = $3
-     RETURNING *`,
-    [parsed.data.photo, parsed.data.notes ?? null, existing.rows[0].id],
+       SET check_out_at = NOW(), check_out_photo = ?, notes = COALESCE(?, notes)
+     WHERE id = ?`,
+    [photoUrl, parsed.data.notes ?? null, existing.id],
   );
 
+  const row = await findOne<AttendanceRow>(
+    "SELECT * FROM attendance WHERE id = ? LIMIT 1",
+    [existing.id],
+  );
+  if (!row) {
+    res.status(500).json({ error: "Gagal memuat record presensi" });
+    return;
+  }
+
   res.json(
-    shapeAttendance(r.rows[0], {
+    shapeAttendance(row, {
       full_name: user.full_name,
       position: user.position,
       department: user.department,

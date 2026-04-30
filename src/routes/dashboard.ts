@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import { findOne, query } from "../db.js";
 import { requireAdmin, requireAuth } from "../lib/auth.js";
 import {
   AttendanceRow,
@@ -23,13 +23,13 @@ router.get(
   async (_req, res) => {
     const today = todayJakarta();
 
-    const totalRes = await query<{ value: string }>(
-      "SELECT COUNT(*)::text AS value FROM employees WHERE role = 'employee'",
+    const totalRow = await findOne<{ value: number }>(
+      "SELECT COUNT(*) AS value FROM employees WHERE role = 'employee'",
     );
-    const totalEmployees = Number(totalRes.rows[0].value);
+    const totalEmployees = Number(totalRow?.value ?? 0);
 
     const todays = await query<AttendanceRow>(
-      "SELECT * FROM attendance WHERE date = $1",
+      "SELECT * FROM attendance WHERE date = ?",
       [today],
     );
 
@@ -45,11 +45,11 @@ router.get(
     weekStart.setUTCDate(weekStart.getUTCDate() - 6);
     const weekStartStr = weekStart.toISOString().slice(0, 10);
 
-    const weekRes = await query<{ value: string }>(
-      "SELECT COUNT(*)::text AS value FROM attendance WHERE date >= $1",
+    const weekRow = await findOne<{ value: number }>(
+      "SELECT COUNT(*) AS value FROM attendance WHERE date >= ?",
       [weekStartStr],
     );
-    const totalThisWeek = Number(weekRes.rows[0].value);
+    const totalThisWeek = Number(weekRow?.value ?? 0);
 
     res.json({
       totalEmployees,

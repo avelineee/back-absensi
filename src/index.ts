@@ -6,6 +6,7 @@ import authRouter from "./routes/auth.js";
 import employeesRouter from "./routes/employees.js";
 import attendanceRouter from "./routes/attendance.js";
 import dashboardRouter from "./routes/dashboard.js";
+import { ensureUploadDirs, UPLOAD_ROOT } from "./lib/storage.js";
 
 const app = express();
 
@@ -17,6 +18,16 @@ app.use(
 );
 app.use(express.json({ limit: "8mb" }));
 app.use(cookieParser());
+
+// Sajikan file foto presensi sebagai static files.
+// Path publik: http://localhost:3001/uploads/attendance/<filename>
+app.use(
+  "/uploads",
+  express.static(UPLOAD_ROOT, {
+    maxAge: "1d",
+    fallthrough: false,
+  }),
+);
 
 app.get("/api/healthz", (_req, res) => {
   res.json({ ok: true });
@@ -34,6 +45,14 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 const port = Number(process.env.PORT ?? 3001);
-app.listen(port, () => {
-  console.log(`[backend] siap di http://localhost:${port}`);
-});
+ensureUploadDirs()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(`[backend] siap di http://localhost:${port}`);
+      console.log(`[backend] foto presensi: http://localhost:${port}/uploads/attendance/`);
+    });
+  })
+  .catch((err) => {
+    console.error("Gagal menyiapkan folder uploads:", err);
+    process.exit(1);
+  });
