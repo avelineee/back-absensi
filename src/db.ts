@@ -1,8 +1,22 @@
+import mysql from "mysql2/promise";
 
-pool.on("error", (err) => {
-  console.error("mysql pool error", err);
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL belum diset di file .env");
+}
+
+export const pool = mysql.createPool({
+  uri: process.env.DATABASE_URL,
+  waitForConnections: true,
+  connectionLimit: 10,
+  dateStrings: false,
+  timezone: "Z",
 });
->>>>>>> 714dd7bcd37ead92631f21d1fae039e872bb824c
+
+export interface QueryResult<T> {
+  rows: T[];
+  rowCount: number;
+  insertId: number;
+}
 
 export async function query<T = Record<string, unknown>>(
   text: string,
